@@ -1,0 +1,21 @@
+---
+# Helper: list every OU that currently exists. Handy as an AWX job so users
+# can see valid OU names before filling in an "Add User/Group" form.
+- name: List existing Organizational Units
+  hosts: dc
+  gather_facts: false
+
+  tasks:
+    - name: Query all OUs from this DC
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $ous = Get-ADOrganizationalUnit -Filter * |
+                 Select-Object -ExpandProperty DistinguishedName
+          $Ansible.Result = @($ous)
+          $Ansible.Changed = $false
+      register: ou_list
+
+    - name: Show the OUs
+      ansible.builtin.debug:
+        var: ou_list.result

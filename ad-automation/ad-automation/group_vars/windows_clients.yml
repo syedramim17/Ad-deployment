@@ -1,0 +1,11 @@
+---
+# WinRM settings for machines being joined to the domain. They connect with a
+# LOCAL admin credential (they aren't in the domain yet). As with the DC, the
+# actual user/password come from a vault file or an AWX Machine Credential.
+#
+# PREREQUISITE: each client's DNS must point at the domain controller before
+# joining, or it won't be able to find the domain.
+ansible_connection: winrm
+ansible_port: 5986
+ansible_winrm_transport: ntlm
+ansible_winrm_server_cert_validation: ignore

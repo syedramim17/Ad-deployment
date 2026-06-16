@@ -1,0 +1,10 @@
+{
+  "name": "Add Group",
+  "description": "Create one security or distribution group.",
+  "spec": [
+    { "question_name": "Group name", "variable": "group_name", "type": "text", "required": true, "default": "" },
+    { "question_name": "Scope", "variable": "group_scope", "type": "multiplechoice", "required": true, "default": "global", "choices": ["global", "domainlocal", "universal"] },
+    { "question_name": "Category", "variable": "group_category", "type": "multiplechoice", "required": true, "default": "security", "choices": ["security", "distribution"] },
+    { "question_name": "Target OU", "question_description": "Blank = domain root.", "variable": "target_ou", "type": "text", "required": false, "default": "" }
+  ]
+}

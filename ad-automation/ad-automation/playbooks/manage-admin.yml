@@ -1,0 +1,25 @@
+---
+# Promote an EXISTING user by adding them to a privileged group.
+# (An "admin" in AD is just a member of a privileged group.)
+- name: Grant a user administrative group membership
+  hosts: dc
+  gather_facts: false
+
+  vars_prompt:
+    - name: username
+      prompt: "Login name of the existing user to promote (e.g. jsmith)"
+      private: false
+
+    - name: admin_group
+      prompt: "Privileged group to add them to"
+      private: false
+      default: "Domain Admins"
+
+  tasks:
+    - name: Add the user to the privileged group
+      microsoft.ad.user:
+        identity: "{{ username }}"
+        groups:
+          add:
+            - "{{ admin_group }}"
+        state: present

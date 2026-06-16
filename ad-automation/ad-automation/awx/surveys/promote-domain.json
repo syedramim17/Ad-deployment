@@ -1,0 +1,9 @@
+{
+  "name": "Create Domain",
+  "description": "Stand up a new AD forest (run once).",
+  "spec": [
+    { "question_name": "Domain FQDN", "question_description": "e.g. corp.example.com", "variable": "dns_domain_name", "type": "text", "required": true, "default": "" },
+    { "question_name": "NetBIOS name", "question_description": "Short name, e.g. CORP. Leave blank to auto-derive.", "variable": "domain_netbios_name", "type": "text", "required": false, "default": "" },
+    { "question_name": "DSRM recovery password", "question_description": "Directory Services Restore Mode password.", "variable": "safe_mode_password", "type": "password", "required": true, "default": "" }
+  ]
+}

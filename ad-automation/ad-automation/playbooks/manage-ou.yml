@@ -1,0 +1,37 @@
+---
+# Create ONE Organizational Unit. Domain is discovered from the DC.
+- name: Create an Active Directory Organizational Unit
+  hosts: dc
+  gather_facts: false
+
+  vars_prompt:
+    - name: ou_name
+      prompt: "Name of the OU to create (e.g. Sales)"
+      private: false
+
+    - name: parent_ou
+      prompt: "Parent OU name, or blank for the domain root"
+      private: false
+      default: ""
+
+  tasks:
+    - name: Ask this DC for its own domain base DN
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Result = (Get-ADDomain).DistinguishedName
+          $Ansible.Changed = $false
+      register: domain_info
+
+    - name: Build the OU path
+      ansible.builtin.set_fact:
+        ou_path: >-
+          {{ ('OU=' ~ parent_ou ~ ',' ~ domain_info.result)
+             if parent_ou else domain_info.result }}
+
+    - name: Create the organizational unit
+      microsoft.ad.ou:
+        name: "{{ ou_name }}"
+        path: "{{ ou_path }}"
+        state: present
+        protect_from_deletion: true

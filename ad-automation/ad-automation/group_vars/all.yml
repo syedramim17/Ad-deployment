@@ -1,0 +1,6 @@
+---
+# The ONE value the automation cannot discover on its own: the domain's DNS
+# name. A computer that hasn't joined the domain yet can't be asked what
+# domain it belongs to, so join-computer.yml reads this. Every DC-side
+# playbook auto-discovers the domain and ignores this value entirely.
+domain_dns_name: corp.example.com          # <-- set to your real domain once

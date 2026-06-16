@@ -1,0 +1,63 @@
+---
+# Create ONE user, placed in a chosen OU. Domain discovered from the DC.
+- name: Create an Active Directory user
+  hosts: dc
+  gather_facts: false
+
+  vars_prompt:
+    - name: first_name
+      prompt: "First name"
+      private: false
+
+    - name: last_name
+      prompt: "Last name"
+      private: false
+
+    - name: username
+      prompt: "Login name / sAMAccountName (e.g. jsmith)"
+      private: false
+
+    - name: user_password
+      prompt: "Password for the new account"
+      private: true
+      confirm: true
+      unsafe: true
+
+    - name: target_ou
+      prompt: "OU to place the user in, or blank for the domain root"
+      private: false
+      default: ""
+
+  tasks:
+    - name: Ask this DC for its own domain (base DN + DNS root)
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $d = Get-ADDomain
+          $Ansible.Result = @{
+            base_dn  = $d.DistinguishedName
+            dns_root = $d.DNSRoot
+          }
+          $Ansible.Changed = $false
+      register: domain_info
+
+    - name: Compute the user's path and UPN
+      ansible.builtin.set_fact:
+        user_path: >-
+          {{ ('OU=' ~ target_ou ~ ',' ~ domain_info.result.base_dn)
+             if target_ou else domain_info.result.base_dn }}
+        user_upn: "{{ username }}@{{ domain_info.result.dns_root }}"
+
+    - name: Create the user account
+      microsoft.ad.user:
+        name: "{{ first_name }} {{ last_name }}"
+        sam_account_name: "{{ username }}"
+        upn: "{{ user_upn }}"
+        firstname: "{{ first_name }}"
+        surname: "{{ last_name }}"
+        display_name: "{{ first_name }} {{ last_name }}"
+        password: "{{ user_password }}"
+        path: "{{ user_path }}"
+        enabled: true
+        update_password: on_create
+        state: present

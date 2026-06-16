@@ -1,0 +1,41 @@
+---
+# Join a Windows machine to the domain and (optionally) drop its computer
+# account into a chosen OU. Runs on the CLIENT as a LOCAL admin, using a
+# domain admin credential to authorize the join.
+- name: Join a Windows computer to the domain
+  hosts: windows_clients
+  gather_facts: false
+
+  vars:
+    # base DN derived from the one configured domain name (see group_vars/all.yml)
+    base_dn: "DC={{ domain_dns_name.split('.') | join(',DC=') }}"
+
+  vars_prompt:
+    - name: domain_admin_user
+      prompt: "Domain admin to authorize the join (e.g. CORP\\Administrator)"
+      private: false
+
+    - name: domain_admin_password
+      prompt: "Domain admin password"
+      private: true
+      unsafe: true
+
+    - name: target_ou
+      prompt: "OU for the computer account, or blank for the default container"
+      private: false
+      default: ""
+
+  tasks:
+    - name: Build the computer's OU path (only if an OU was given)
+      ansible.builtin.set_fact:
+        computer_ou: "OU={{ target_ou }},{{ base_dn }}"
+      when: target_ou | length > 0
+
+    - name: Join this computer to the domain
+      microsoft.ad.membership:
+        dns_domain_name: "{{ domain_dns_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        domain_ou_path: "{{ computer_ou | default(omit) }}"
+        state: domain
+        reboot: true

@@ -1,0 +1,8 @@
+{
+  "name": "Add OU",
+  "description": "Create one Organizational Unit.",
+  "spec": [
+    { "question_name": "OU name", "question_description": "e.g. Sales", "variable": "ou_name", "type": "text", "required": true, "default": "" },
+    { "question_name": "Parent OU", "question_description": "Leave blank for the domain root.", "variable": "parent_ou", "type": "text", "required": false, "default": "" }
+  ]
+}

@@ -1,0 +1,15 @@
+---
+# WinRM connection settings for the domain controller.
+#
+# Username/password are deliberately NOT here in plaintext:
+#   - CLI:  keep them in an ansible-vault file or pass with --extra-vars.
+#   - AWX:  attach a Machine Credential to the job template; AWX injects
+#           ansible_user / ansible_password securely. Leave them out here.
+#
+# CREDENTIAL SPLIT: promote-domain.yml connects as the LOCAL admin (no domain
+# exists yet); every management playbook connects as a DOMAIN admin. In AWX,
+# use a different credential per job template. At the CLI, switch vault values.
+ansible_connection: winrm
+ansible_port: 5986
+ansible_winrm_transport: ntlm
+ansible_winrm_server_cert_validation: ignore   # lab/self-signed; 'validate' in prod

@@ -1,0 +1,36 @@
+---
+# Stand up a brand-new AD forest on the target server. RUN ONCE.
+# Connects as the LOCAL admin (no domain exists yet).
+- name: Promote first server to a new AD domain controller
+  hosts: dc
+  gather_facts: false
+
+  vars_prompt:
+    - name: dns_domain_name
+      prompt: "FQDN for the NEW domain (e.g. corp.example.com)"
+      private: false
+
+    - name: domain_netbios_name
+      prompt: "NetBIOS short name (e.g. CORP), or blank to auto-derive"
+      private: false
+      default: ""
+
+    - name: safe_mode_password
+      prompt: "DSRM / safe-mode recovery password"
+      private: true
+      confirm: true
+      unsafe: true
+
+  tasks:
+    - name: Install the AD Domain Services role and management tools
+      ansible.windows.win_feature:
+        name: AD-Domain-Services
+        include_management_tools: true
+        state: present
+
+    - name: Create the new forest and promote this server to a DC
+      microsoft.ad.domain:
+        dns_domain_name: "{{ dns_domain_name }}"
+        domain_netbios_name: "{{ domain_netbios_name | default(omit, true) }}"
+        safe_mode_password: "{{ safe_mode_password }}"
+        reboot: true

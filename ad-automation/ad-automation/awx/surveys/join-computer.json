@@ -1,0 +1,9 @@
+{
+  "name": "Join Computer",
+  "description": "Join a Windows machine to the domain.",
+  "spec": [
+    { "question_name": "Domain admin user", "question_description": "Authorizes the join, e.g. CORP\\Administrator", "variable": "domain_admin_user", "type": "text", "required": true, "default": "" },
+    { "question_name": "Domain admin password", "variable": "domain_admin_password", "type": "password", "required": true, "default": "" },
+    { "question_name": "Target OU", "question_description": "OU for the computer account. Blank = default container.", "variable": "target_ou", "type": "text", "required": false, "default": "" }
+  ]
+}

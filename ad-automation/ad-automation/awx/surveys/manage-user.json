@@ -1,0 +1,11 @@
+{
+  "name": "Add User",
+  "description": "Create one user account in a chosen OU.",
+  "spec": [
+    { "question_name": "First name", "variable": "first_name", "type": "text", "required": true, "default": "" },
+    { "question_name": "Last name", "variable": "last_name", "type": "text", "required": true, "default": "" },
+    { "question_name": "Login name", "question_description": "sAMAccountName, e.g. jsmith", "variable": "username", "type": "text", "required": true, "default": "" },
+    { "question_name": "Password", "variable": "user_password", "type": "password", "required": true, "default": "" },
+    { "question_name": "Target OU", "question_description": "Run 'List OUs' to see valid names. Blank = domain root.", "variable": "target_ou", "type": "text", "required": false, "default": "" }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Add Admin",
+  "description": "Add an existing user to a privileged group.",
+  "spec": [
+    { "question_name": "Login name", "question_description": "Existing user, e.g. jsmith", "variable": "username", "type": "text", "required": true, "default": "" },
+    { "question_name": "Privileged group", "variable": "admin_group", "type": "multiplechoice", "required": true, "default": "Domain Admins", "choices": ["Domain Admins", "Enterprise Admins", "Schema Admins", "Account Operators", "Server Operators"] }
+  ]
+}
