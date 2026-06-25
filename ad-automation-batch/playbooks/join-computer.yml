@@ -1,0 +1,40 @@
+---
+# ---------------------------------------------------------------------------
+# Join Windows machines to the domain. This runs ON each client and joins
+# THAT machine, so "multiple computers" = list them in the windows_clients
+# inventory group; the play then runs on all of them at once.
+# Fill in the shared values below, then run.
+# ---------------------------------------------------------------------------
+- name: Join Windows computers to the domain
+  hosts: windows_clients
+  gather_facts: false
+
+  vars:
+    domain_admin_user: ""       # 'CORP\Administrator' (single quotes if it has a backslash)
+    domain_admin_password: ""   # SECRET - don't commit a real value
+    target_ou: ""               # OU for the computer accounts; blank = default container
+    # Domain name comes from inventory group_vars/all.yml (domain_dns_name):
+    base_dn: "DC={{ domain_dns_name.split('.') | join(',DC=') }}"
+
+  tasks:
+    - name: Make sure the required values are set
+      ansible.builtin.assert:
+        that:
+          - "domain_admin_user | default('') | length > 0"
+          - "domain_admin_password | default('') | length > 0"
+        fail_msg: "Set domain_admin_user and domain_admin_password before running."
+        quiet: true
+
+    - name: Build the computer's OU path (only if an OU was given)
+      ansible.builtin.set_fact:
+        computer_ou: "OU={{ target_ou }},{{ base_dn }}"
+      when: target_ou | length > 0
+
+    - name: Join this computer to the domain
+      microsoft.ad.membership:
+        dns_domain_name: "{{ domain_dns_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        domain_ou_path: "{{ computer_ou | default(omit) }}"
+        state: domain
+        reboot: true

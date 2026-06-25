@@ -1,0 +1,61 @@
+---
+# ---------------------------------------------------------------------------
+# Create ONE or MANY security/distribution groups. Domain discovered from DC.
+# Edit the "ad_groups" list below, then run.
+# ---------------------------------------------------------------------------
+- name: Create Active Directory groups
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    # === EDIT THIS LIST. One entry per group; copy an entry to add more. ===
+    ad_groups:
+      - name: ""              # e.g. Sales-Team
+        scope: "global"       # global | domainlocal | universal
+        category: "security"  # security | distribution
+        target_ou: ""         # blank = domain root
+      # - name: "All-Staff"
+      #   scope: "global"
+      #   category: "distribution"
+      #   target_ou: ""
+
+  tasks:
+    - name: Make sure at least one group is listed
+      ansible.builtin.assert:
+        that: "ad_groups | length > 0"
+        fail_msg: "Add at least one entry to the ad_groups list."
+        quiet: true
+
+    - name: Make sure each group has the required fields
+      ansible.builtin.assert:
+        that:
+          - "item.name     | default('') | length > 0"
+          - "item.scope    | default('') | length > 0"
+          - "item.category | default('') | length > 0"
+        fail_msg: "Every group needs name, scope and category."
+        quiet: true
+      loop: "{{ ad_groups }}"
+      loop_control:
+        label: "{{ item.name | default('(blank)') }}"
+
+    - name: Ask this DC for its own domain base DN
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Result = (Get-ADDomain).DistinguishedName
+          $Ansible.Changed = $false
+      register: domain_info
+
+    - name: Create the groups
+      microsoft.ad.group:
+        name: "{{ item.name }}"
+        scope: "{{ item.scope }}"
+        category: "{{ item.category }}"
+        path: >-
+          {{ ('OU=' ~ item.target_ou ~ ',' ~ domain_info.result)
+             if item.target_ou else domain_info.result }}
+        state: present
+        protect_from_deletion: true
+      loop: "{{ ad_groups }}"
+      loop_control:
+        label: "{{ item.name }}"

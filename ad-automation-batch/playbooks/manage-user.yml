@@ -1,0 +1,73 @@
+---
+# ---------------------------------------------------------------------------
+# Create ONE or MANY AD users in a single run. The domain is discovered
+# from the DC. Edit the "ad_users" list below, then run. No prompts.
+# ---------------------------------------------------------------------------
+- name: Create Active Directory users
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    # === EDIT THIS LIST. One entry per user; copy an entry to add more. ===
+    ad_users:
+      - first_name: ""      # e.g. John
+        last_name:  ""      # e.g. Smith
+        username:   ""      # sAMAccountName, e.g. jsmith
+        password:   ""      # SECRET - don't commit a real value (vault-encrypt it)
+        target_ou:  ""      # blank = domain root
+      # - first_name: "Jane"
+      #   last_name:  "Doe"
+      #   username:   "jdoe"
+      #   password:   "S3cret!"
+      #   target_ou:  "Sales"
+
+  tasks:
+    - name: Make sure at least one user is listed
+      ansible.builtin.assert:
+        that: "ad_users | length > 0"
+        fail_msg: "Add at least one entry to the ad_users list."
+        quiet: true
+
+    - name: Make sure each user entry is filled in
+      ansible.builtin.assert:
+        that:
+          - "item.first_name | default('') | length > 0"
+          - "item.last_name  | default('') | length > 0"
+          - "item.username   | default('') | length > 0"
+          - "item.password   | default('') | length > 0"
+        fail_msg: "Every user needs first_name, last_name, username and password."
+        quiet: true
+      loop: "{{ ad_users }}"
+      loop_control:
+        label: "{{ item.username | default('(blank)') }}"
+
+    - name: Ask this DC for its own domain (base DN + DNS root)
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $d = Get-ADDomain
+          $Ansible.Result = @{
+            base_dn  = $d.DistinguishedName
+            dns_root = $d.DNSRoot
+          }
+          $Ansible.Changed = $false
+      register: domain_info
+
+    - name: Create the user accounts
+      microsoft.ad.user:
+        name: "{{ item.first_name }} {{ item.last_name }}"
+        sam_account_name: "{{ item.username }}"
+        upn: "{{ item.username }}@{{ domain_info.result.dns_root }}"
+        firstname: "{{ item.first_name }}"
+        surname: "{{ item.last_name }}"
+        display_name: "{{ item.first_name }} {{ item.last_name }}"
+        password: "{{ item.password }}"
+        path: >-
+          {{ ('OU=' ~ item.target_ou ~ ',' ~ domain_info.result.base_dn)
+             if item.target_ou else domain_info.result.base_dn }}
+        enabled: true
+        update_password: on_create
+        state: present
+      loop: "{{ ad_users }}"
+      loop_control:
+        label: "{{ item.username }}"

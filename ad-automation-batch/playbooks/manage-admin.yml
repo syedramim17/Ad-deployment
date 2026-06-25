@@ -1,0 +1,45 @@
+---
+# ---------------------------------------------------------------------------
+# Add ONE or MANY existing users to privileged groups in a single run.
+# Edit the "ad_admins" list below, then run.
+# ---------------------------------------------------------------------------
+- name: Grant users administrative group membership
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    # === EDIT THIS LIST. One entry per promotion; copy an entry to add more. ===
+    ad_admins:
+      - username: ""                # existing user, e.g. jsmith
+        admin_group: "Domain Admins"
+      # - username: "jdoe"
+      #   admin_group: "Enterprise Admins"
+
+  tasks:
+    - name: Make sure at least one entry is listed
+      ansible.builtin.assert:
+        that: "ad_admins | length > 0"
+        fail_msg: "Add at least one entry to the ad_admins list."
+        quiet: true
+
+    - name: Make sure each entry is filled in
+      ansible.builtin.assert:
+        that:
+          - "item.username    | default('') | length > 0"
+          - "item.admin_group | default('') | length > 0"
+        fail_msg: "Every entry needs username and admin_group."
+        quiet: true
+      loop: "{{ ad_admins }}"
+      loop_control:
+        label: "{{ item.username | default('(blank)') }}"
+
+    - name: Add each user to their privileged group
+      microsoft.ad.user:
+        identity: "{{ item.username }}"
+        groups:
+          add:
+            - "{{ item.admin_group }}"
+        state: present
+      loop: "{{ ad_admins }}"
+      loop_control:
+        label: "{{ item.username }} -> {{ item.admin_group }}"

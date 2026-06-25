@@ -1,0 +1,52 @@
+---
+# ---------------------------------------------------------------------------
+# Create ONE or MANY Organizational Units. Domain discovered from the DC.
+# Edit the "ad_ous" list below, then run.
+# ---------------------------------------------------------------------------
+- name: Create Active Directory Organizational Units
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    # === EDIT THIS LIST. One entry per OU; copy an entry to add more. ===
+    ad_ous:
+      - name: ""          # e.g. Sales
+        parent_ou: ""     # blank = domain root
+      # - name: "Marketing"
+      #   parent_ou: ""
+
+  tasks:
+    - name: Make sure at least one OU is listed
+      ansible.builtin.assert:
+        that: "ad_ous | length > 0"
+        fail_msg: "Add at least one entry to the ad_ous list."
+        quiet: true
+
+    - name: Make sure each OU has a name
+      ansible.builtin.assert:
+        that: "item.name | default('') | length > 0"
+        fail_msg: "Every OU entry needs a name."
+        quiet: true
+      loop: "{{ ad_ous }}"
+      loop_control:
+        label: "{{ item.name | default('(blank)') }}"
+
+    - name: Ask this DC for its own domain base DN
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Result = (Get-ADDomain).DistinguishedName
+          $Ansible.Changed = $false
+      register: domain_info
+
+    - name: Create the organizational units
+      microsoft.ad.ou:
+        name: "{{ item.name }}"
+        path: >-
+          {{ ('OU=' ~ item.parent_ou ~ ',' ~ domain_info.result)
+             if item.parent_ou else domain_info.result }}
+        state: present
+        protect_from_deletion: true
+      loop: "{{ ad_ous }}"
+      loop_control:
+        label: "{{ item.name }}"

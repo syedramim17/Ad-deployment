@@ -1,0 +1,35 @@
+---
+# ---------------------------------------------------------------------------
+# Stand up a brand-new AD forest on the target server. RUN ONCE.
+# This makes ONE domain, so there's no list - just fill in the values.
+# ---------------------------------------------------------------------------
+- name: Promote first server to a new AD domain controller
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    dns_domain_name: ""      # e.g. corp.example.com
+    domain_netbios_name: ""  # blank = auto-derive
+    safe_mode_password: ""   # DSRM password - SECRET, don't commit a real value
+
+  tasks:
+    - name: Make sure the required values are set
+      ansible.builtin.assert:
+        that:
+          - "dns_domain_name | default('') | length > 0"
+          - "safe_mode_password | default('') | length > 0"
+        fail_msg: "Set dns_domain_name and safe_mode_password before running."
+        quiet: true
+
+    - name: Install the AD Domain Services role and management tools
+      ansible.windows.win_feature:
+        name: AD-Domain-Services
+        include_management_tools: true
+        state: present
+
+    - name: Create the new forest and promote this server to a DC
+      microsoft.ad.domain:
+        dns_domain_name: "{{ dns_domain_name }}"
+        domain_netbios_name: "{{ domain_netbios_name | default(omit, true) }}"
+        safe_mode_password: "{{ safe_mode_password }}"
+        reboot: true
