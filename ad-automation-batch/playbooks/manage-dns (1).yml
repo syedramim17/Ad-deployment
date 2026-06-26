@@ -1,0 +1,83 @@
+---
+# ---------------------------------------------------------------------------
+# manage-dns.yml  -  run right after promote-domain.
+# Creates reverse lookup zone(s), then forward (A) and reverse (PTR) records
+# for hosts that do NOT self-register (Linux nodes, appliances). Idempotent.
+# Needs the ansible.windows collection. WinRM connection vars (winrm / 5986 /
+# ntlm / cert-ignore) live on the `dc` group in your AAP inventory, not here.
+# Reverse zones assume a /24 subnet.
+# ---------------------------------------------------------------------------
+
+- name: Configure DNS zones and records on the domain controller
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    dns_reverse_zones:                 # one entry per subnet needing reverse lookups
+      - network_id: "192.168.1.0/24"   # CIDR; the .in-addr.arpa zone name is derived
+
+    dns_a_records:                     # hosts that do NOT self-register in DNS
+      - name: "Admin"     # short hostname only, never the FQDN
+        ip: "192.168.1.20"             # <- set to the controller's real IP
+      # - name: "extra-host"           # copy this pattern to add more
+      #   ip: "192.168.1.50"
+
+  tasks:
+    - name: Validate DNS input
+      ansible.builtin.assert:
+        that:
+          - dns_reverse_zones | length > 0
+          - dns_reverse_zones | rejectattr('network_id') | list | length == 0
+          - dns_a_records | rejectattr('name') | list | length == 0
+          - dns_a_records | rejectattr('ip') | list | length == 0
+        fail_msg: "Every reverse zone needs a network_id, and every A record needs a name and ip. Check for blank entries."
+        success_msg: "DNS input validated."
+
+    - name: Discover the AD domain (this is the forward lookup zone)
+      ansible.windows.win_powershell:
+        script: |
+          $Ansible.Changed = $false
+          $Ansible.Result  = (Get-ADDomain).DNSRoot
+      register: ad_domain
+
+    - name: Ensure reverse lookup zone exists
+      ansible.windows.win_powershell:
+        parameters:
+          NetworkId: "{{ item.network_id }}"
+        script: |
+          param([String]$NetworkId)
+          $octets   = $NetworkId.Split('/')[0].Split('.')
+          $zoneName = "$($octets[2]).$($octets[1]).$($octets[0]).in-addr.arpa"
+          if ($null -eq (Get-DnsServerZone -Name $zoneName -ErrorAction SilentlyContinue)) {
+              Add-DnsServerPrimaryZone -NetworkId $NetworkId -ReplicationScope "Domain" -DynamicUpdate "Secure" -ErrorAction Stop
+              $Ansible.Changed = $true
+          } else {
+              $Ansible.Changed = $false
+          }
+      loop: "{{ dns_reverse_zones }}"
+      loop_control:
+        label: "{{ item.network_id }}"
+
+    - name: Ensure forward (A) records exist
+      ansible.windows.win_dns_record:
+        name: "{{ item.name }}"
+        type: A
+        zone: "{{ ad_domain.result }}"
+        value:
+          - "{{ item.ip }}"
+        state: present
+      loop: "{{ dns_a_records }}"
+      loop_control:
+        label: "{{ item.name }} -> {{ item.ip }}"
+
+    - name: Ensure reverse (PTR) records exist
+      ansible.windows.win_dns_record:
+        name: "{{ item.ip.split('.')[3] }}"
+        type: PTR
+        zone: "{{ item.ip.split('.')[2] }}.{{ item.ip.split('.')[1] }}.{{ item.ip.split('.')[0] }}.in-addr.arpa"
+        value:
+          - "{{ item.name }}.{{ ad_domain.result }}"
+        state: present
+      loop: "{{ dns_a_records }}"
+      loop_control:
+        label: "{{ item.ip }} -> {{ item.name }}"
