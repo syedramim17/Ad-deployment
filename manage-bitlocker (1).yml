@@ -1,0 +1,92 @@
+---
+# ============================================================================
+# manage-bitlocker.yml
+# ----------------------------------------------------------------------------
+# Enables BitLocker on the OS volume of the bare-metal domain controller and
+# escrows the recovery password to Active Directory.
+#
+#   - Requires a present, ready TPM (fails fast otherwise). On bare metal the
+#     TPM unlocks the volume unattended at every boot.
+#   - Installs the BitLocker feature; the FIRST run reboots the DC once.
+#   - Encrypts the OS volume with a TPM protector, adds a recovery password,
+#     and backs that recovery password up to the DC's AD computer object.
+#   - Reports the resulting BitLocker status.
+#
+# Running this playbook encrypts the drive. Have console / out-of-band access
+# (iDRAC / iLO) and the recovery key on hand before the first run: a later TPM
+# or firmware change that breaks auto-unlock will hold the DC at the recovery
+# screen on boot.
+#
+# Collections: ansible.windows
+# Target:      dc
+# ============================================================================
+
+- name: Enable and escrow BitLocker on the domain controller
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    bitlocker_drive: "C:"            # OS volume to encrypt
+    encryption_method: "XtsAes256"   # fixed-drive encryption algorithm
+
+  tasks:
+
+    - name: Require a present, ready TPM
+      ansible.windows.win_powershell:
+        script: |
+          $tpm = Get-Tpm
+          $Ansible.Result  = @{ Present = [bool]$tpm.TpmPresent; Ready = [bool]$tpm.TpmReady }
+          $Ansible.Changed = $false
+      register: tpm_status
+      failed_when: not (tpm_status.result.Present and tpm_status.result.Ready)
+
+    - name: Ensure the BitLocker feature is installed
+      ansible.windows.win_feature:
+        name: BitLocker
+        include_sub_features: true
+        include_management_tools: true
+        state: present
+      register: bitlocker_feature
+
+    - name: Reboot the DC if the feature install requires it
+      ansible.windows.win_reboot:
+        msg: "Rebooting to finish BitLocker feature installation."
+      when: bitlocker_feature.reboot_required
+
+    - name: Encrypt the OS volume and escrow the recovery key to AD
+      ansible.windows.win_powershell:
+        script: |
+          $vol = Get-BitLockerVolume -MountPoint "{{ bitlocker_drive }}"
+          if ($vol.VolumeStatus -eq "FullyDecrypted") {
+            Enable-BitLocker -MountPoint "{{ bitlocker_drive }}" `
+              -EncryptionMethod {{ encryption_method }} `
+              -TpmProtector -SkipHardwareTest | Out-Null
+            Add-BitLockerKeyProtector -MountPoint "{{ bitlocker_drive }}" `
+              -RecoveryPasswordProtector | Out-Null
+            $rp = (Get-BitLockerVolume -MountPoint "{{ bitlocker_drive }}").KeyProtector |
+                  Where-Object { $_.KeyProtectorType -eq "RecoveryPassword" } |
+                  Select-Object -Last 1
+            Backup-BitLockerKeyProtector -MountPoint "{{ bitlocker_drive }}" `
+              -KeyProtectorId $rp.KeyProtectorId | Out-Null
+            $Ansible.Changed = $true
+          } else {
+            $Ansible.Changed = $false
+          }
+      register: bitlocker_enable
+
+    - name: Report BitLocker status
+      ansible.windows.win_powershell:
+        script: |
+          $vol = Get-BitLockerVolume -MountPoint "{{ bitlocker_drive }}"
+          $Ansible.Result = @{
+            VolumeStatus         = $vol.VolumeStatus.ToString()
+            ProtectionStatus     = $vol.ProtectionStatus.ToString()
+            EncryptionPercentage = $vol.EncryptionPercentage
+            KeyProtectors        = @($vol.KeyProtector | ForEach-Object { $_.KeyProtectorType.ToString() })
+          }
+          $Ansible.Changed = $false
+      register: bitlocker_status
+
+    - name: Show BitLocker status
+      ansible.builtin.debug:
+        var: bitlocker_status.result
