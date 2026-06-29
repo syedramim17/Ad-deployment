@@ -1,0 +1,49 @@
+---
+# request-cert.yml
+# Enrols domain-joined targets for a Computer certificate from the il-ca Enterprise CA.
+# Refreshes group policy first so the CA root cert is pulled from AD into the local trust
+# store, then requests the machine cert. Point 'hosts' at your member group.
+
+- name: Enrol targets for a machine certificate
+  hosts: domain_members        # <-- set to the inventory group holding your member machines
+  gather_facts: false
+
+  vars:
+    cert_template: "Machine"                  # 'Computer' template published on the CA
+    cert_store:    'Cert:\LocalMachine\My'    # where the issued cert is placed
+    issuing_ca:    "il-ca"                     # CA common name, used for the idempotency check
+
+  tasks:
+    - name: Refresh group policy to pull CA trust from AD
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          Start-Process gpupdate -ArgumentList '/target:computer','/force' -Wait -NoNewWindow
+          $Ansible.Changed = $false
+          return "Group policy refreshed"
+
+    - name: Request a machine certificate from the Enterprise CA
+      ansible.windows.win_powershell:
+        parameters:
+          Template: "{{ cert_template }}"
+          Store:    "{{ cert_store }}"
+          CAName:   "{{ issuing_ca }}"
+        script: |
+          param($Template, $Store, $CAName)
+          $ErrorActionPreference = 'Stop'
+
+          $existing = Get-ChildItem $Store | Where-Object { $_.Issuer -match "CN=$CAName" }
+          if ($existing) {
+              $Ansible.Changed = $false
+              return "Machine cert already present: $($existing[0].Thumbprint)"
+          }
+
+          $result = Get-Certificate -Template $Template -CertStoreLocation $Store
+          if ($result.Status -ne 'Issued') { throw "Enrollment status: $($result.Status)" }
+          $Ansible.Changed = $true
+          return "Certificate issued: $($result.Certificate.Thumbprint)"
+      register: cert_request
+
+    - name: Show enrollment result
+      ansible.builtin.debug:
+        msg: "{{ cert_request.output | first }}"

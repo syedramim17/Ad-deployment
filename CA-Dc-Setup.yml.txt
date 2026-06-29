@@ -1,0 +1,98 @@
+---
+# manage-ca.yml
+# Stands up an Enterprise Root CA (ADCS) on the domain controller and publishes the
+# Computer template so domain members can enrol. Run against the 'dc' group.
+#   CA name: il-ca | Type: Enterprise Root | Hash: SHA256 | Key: RSA 4096 | Validity: 10y
+# The installing account must be an Enterprise Admin (the default domain Administrator is,
+# in a single-forest lab). An Enterprise CA self-publishes its root cert to AD on config.
+
+- name: Install and configure the Enterprise Root CA
+  hosts: dc
+  gather_facts: false
+
+  vars:
+    ca_common_name:    "il-ca"                                          # CA subject CN
+    ca_hash:           "SHA256"                                         # signature hash
+    ca_key_length:     4096                                             # RSA key size
+    ca_validity_years: 10                                               # root cert lifetime
+    ca_provider:       "RSA#Microsoft Software Key Storage Provider"    # CNG KSP
+    ca_templates:                                                       # templates to publish
+      - Machine        # 'Computer' template - lets domain members enrol for machine certs
+
+  tasks:
+    - name: Install AD Certificate Services role and management tools
+      ansible.windows.win_feature:
+        name:
+          - ADCS-Cert-Authority
+          - RSAT-ADCS
+          - RSAT-ADCS-Mgmt
+        include_management_tools: true
+        state: present
+      register: adcs_feature
+
+    - name: Reboot if the role install requires it
+      ansible.windows.win_reboot:
+      when: adcs_feature.reboot_required
+
+    - name: Configure the Enterprise Root CA
+      ansible.windows.win_powershell:
+        parameters:
+          Name:     "{{ ca_common_name }}"
+          Hash:     "{{ ca_hash }}"
+          KeyLen:   "{{ ca_key_length }}"
+          Years:    "{{ ca_validity_years }}"
+          Provider: "{{ ca_provider }}"
+        script: |
+          param($Name, $Hash, $KeyLen, $Years, $Provider)
+          $ErrorActionPreference = 'Stop'
+
+          if (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration\$Name") {
+              $Ansible.Changed = $false
+              return "CA '$Name' is already configured"
+          }
+
+          $result = Install-AdcsCertificationAuthority `
+              -CAType EnterpriseRootCa `
+              -CACommonName $Name `
+              -HashAlgorithmName $Hash `
+              -KeyLength $KeyLen `
+              -CryptoProviderName $Provider `
+              -ValidityPeriod Years `
+              -ValidityPeriodUnits $Years `
+              -Force
+
+          if ($result.ErrorId -ne 0) { throw "CA config failed: $($result.ErrorString)" }
+          $Ansible.Changed = $true
+          return "CA '$Name' configured"
+      register: ca_config
+
+    - name: Ensure the CA service is running
+      ansible.windows.win_service:
+        name: CertSvc
+        state: started
+        start_mode: auto
+
+    - name: Publish certificate templates to the CA
+      ansible.windows.win_powershell:
+        parameters:
+          Templates: "{{ ca_templates }}"
+        script: |
+          param($Templates)
+          $ErrorActionPreference = 'Stop'
+          $changed = $false
+          $current = @((Get-CATemplate).Name)
+          foreach ($tpl in $Templates) {
+              if ($current -notcontains $tpl) {
+                  Add-CATemplate -Name $tpl -Force
+                  $changed = $true
+              }
+          }
+          $Ansible.Changed = $changed
+          return "Templates on CA: $(((Get-CATemplate).Name) -join ', ')"
+      register: ca_templates_result
+
+    - name: Show CA results
+      ansible.builtin.debug:
+        msg:
+          - "{{ ca_config.output | first }}"
+          - "{{ ca_templates_result.output | first }}"
